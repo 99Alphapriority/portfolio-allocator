@@ -1,40 +1,36 @@
-// ── Constants ─────────────────────────────────────────────────────────
-const STORAGE_TARGETS  = 'pa_targets_v1';
-const STORAGE_HOLDINGS = 'pa_holdings_v1';
-const STORAGE_INSTALL  = 'pa_install_dismissed';
-const STORAGE_LASTSAVE = 'pa_last_save';
+var STORAGE_TARGETS  = 'pa_targets_v1';
+var STORAGE_HOLDINGS = 'pa_holdings_v1';
+var STORAGE_INSTALL  = 'pa_install_dismissed';
+var STORAGE_LASTSAVE = 'pa_last_save';
 
-const COLORS = [
+var COLORS = [
   '#c8f060','#60c8f0','#f0a060','#a060f0','#f060a0',
   '#60f0a0','#f0e060','#60a0f0','#f08060','#80f060',
   '#c060f0','#60f0c0','#f0c060','#6080f0','#f06080'
 ];
 
-// ── State ─────────────────────────────────────────────────────────────
-let parsedHoldings = null;
-let targets = [];
+var parsedHoldings = null;
+var targets = [];
 
-// ── Init ──────────────────────────────────────────────────────────────
-window.addEventListener('DOMContentLoaded', () => {
+// ── Boot ───────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', function() {
   loadTargets();
   loadHoldings();
   showInstallBanner();
-  registerSW();
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(function() {});
+  }
 });
 
-function registerSW() {
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
-  }
-}
-
-// ── Persistence ───────────────────────────────────────────────────────
+// ── Targets ────────────────────────────────────────────────────────────
 function saveTargets() {
-  const rows = document.querySelectorAll('#targetsGrid .target-row');
-  const data = [];
-  rows.forEach(row => {
-    const [t, p] = row.querySelectorAll('input');
-    if (t.value.trim()) data.push({ ticker: t.value.trim().toUpperCase(), pct: p.value });
+  var rows = document.querySelectorAll('#targetsGrid .target-row');
+  var data = [];
+  rows.forEach(function(row) {
+    var inputs = row.querySelectorAll('input');
+    var ticker = inputs[0].value.trim().toUpperCase();
+    var pct = inputs[1].value;
+    if (ticker) data.push({ ticker: ticker, pct: pct });
   });
   try {
     localStorage.setItem(STORAGE_TARGETS, JSON.stringify(data));
@@ -44,44 +40,46 @@ function saveTargets() {
 }
 
 function loadTargets() {
+  var defaults = [['XEQT','60'],['SVRS','15'],['XQQ','10'],['RKLB','10'],['ASTS','5']];
   try {
-    const raw = localStorage.getItem(STORAGE_TARGETS);
-    const data = raw ? JSON.parse(raw) : null;
+    var raw = localStorage.getItem(STORAGE_TARGETS);
+    var data = raw ? JSON.parse(raw) : null;
     if (data && data.length > 0) {
-      data.forEach(d => addRow(d.ticker, d.pct));
+      data.forEach(function(d) { addRow(d.ticker, d.pct); });
     } else {
-      // defaults
-      [['VFV','40'],['XIC','30'],['ZAG','20'],['CASH','10']].forEach(([t,p]) => addRow(t,p));
+      defaults.forEach(function(d) { addRow(d[0], d[1]); });
     }
   } catch(e) {
-    [['VFV','40'],['XIC','30'],['ZAG','20'],['CASH','10']].forEach(([t,p]) => addRow(t,p));
+    defaults.forEach(function(d) { addRow(d[0], d[1]); });
   }
   updateTotal();
   updateLastSaved();
 }
 
+// ── Holdings ───────────────────────────────────────────────────────────
 function saveHoldings(holdings, filename) {
   try {
-    localStorage.setItem(STORAGE_HOLDINGS, JSON.stringify({ holdings, filename, date: new Date().toISOString() }));
+    localStorage.setItem(STORAGE_HOLDINGS, JSON.stringify({
+      holdings: holdings, filename: filename, date: new Date().toISOString()
+    }));
   } catch(e) {}
 }
 
 function loadHoldings() {
   try {
-    const raw = localStorage.getItem(STORAGE_HOLDINGS);
+    var raw = localStorage.getItem(STORAGE_HOLDINGS);
     if (!raw) return;
-    const { holdings, filename, date } = JSON.parse(raw);
-    if (!holdings) return;
-    parsedHoldings = holdings;
-    const d = new Date(date);
-    const age = Math.round((Date.now() - d) / 86400000);
-    const ageStr = age === 0 ? 'today' : age === 1 ? 'yesterday' : `${age}d ago`;
-    const banner = document.getElementById('cachedBanner');
-    const bannerText = document.getElementById('cachedBannerText');
-    bannerText.textContent = `Using saved holdings from ${filename} (${ageStr})`;
-    banner.style.display = 'flex';
+    var obj = JSON.parse(raw);
+    if (!obj || !obj.holdings) return;
+    parsedHoldings = obj.holdings;
+    var age = Math.round((Date.now() - new Date(obj.date)) / 86400000);
+    var ageStr = age === 0 ? 'today' : age === 1 ? 'yesterday' : age + 'd ago';
+    document.getElementById('cachedBannerText').textContent =
+      'Using saved holdings from ' + obj.filename + ' (' + ageStr + ')';
+    document.getElementById('cachedBanner').style.display = 'flex';
     document.getElementById('fileStatus').innerHTML =
-      `<span style="color:var(--accent2)">↩</span> Restored from last session: <strong style="color:var(--text)">${filename}</strong>`;
+      '<span style="color:var(--accent2)">&#8617;</span> Restored: <strong style="color:var(--text)">' + obj.filename + '</strong>';
+    tryRender();
   } catch(e) {}
 }
 
@@ -95,20 +93,20 @@ function clearHoldings() {
 
 function updateLastSaved() {
   try {
-    const iso = localStorage.getItem(STORAGE_LASTSAVE);
+    var iso = localStorage.getItem(STORAGE_LASTSAVE);
     if (!iso) return;
-    const d = new Date(iso);
+    var d = new Date(iso);
     document.getElementById('lastSaved').textContent =
       'Saved ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   } catch(e) {}
 }
 
-// ── Install banner ────────────────────────────────────────────────────
+// ── Install banner ─────────────────────────────────────────────────────
 function showInstallBanner() {
-  const dismissed = localStorage.getItem(STORAGE_INSTALL);
-  const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
-  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-  if (!dismissed && isIOS && !isStandalone) {
+  var isStandalone = window.navigator.standalone ||
+    window.matchMedia('(display-mode: standalone)').matches;
+  var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  if (!localStorage.getItem(STORAGE_INSTALL) && isIOS && !isStandalone) {
     document.getElementById('installBanner').style.display = 'block';
   }
 }
@@ -117,130 +115,177 @@ function dismissInstall() {
   document.getElementById('installBanner').style.display = 'none';
 }
 
-// ── Target rows ───────────────────────────────────────────────────────
-function addRow(ticker = '', pct = '') {
-  const grid = document.getElementById('targetsGrid');
-  const row = document.createElement('div');
+// ── Target rows ────────────────────────────────────────────────────────
+function addRow(ticker, pct) {
+  var grid = document.getElementById('targetsGrid');
+  var row = document.createElement('div');
   row.className = 'target-row';
-  row.innerHTML = `
-    <input type="text" placeholder="Ticker" value="${ticker}"
-      oninput="updateTotal();saveTargets()"
-      style="text-transform:uppercase" />
-    <input type="number" placeholder="%" min="0" max="100" step="0.1" value="${pct}"
-      oninput="updateTotal();saveTargets()" />
-    <button class="btn-icon" onclick="removeRow(this)">×</button>
-  `;
+
+  var ti = document.createElement('input');
+  ti.type = 'text';
+  ti.placeholder = 'Ticker';
+  ti.value = ticker || '';
+  ti.style.textTransform = 'uppercase';
+  ti.addEventListener('input', function() { updateTotal(); saveTargets(); });
+
+  var pi = document.createElement('input');
+  pi.type = 'number';
+  pi.placeholder = '%';
+  pi.min = '0'; pi.max = '100'; pi.step = '0.1';
+  pi.value = pct || '';
+  pi.addEventListener('input', function() { updateTotal(); saveTargets(); });
+
+  var btn = document.createElement('button');
+  btn.className = 'btn-icon';
+  btn.textContent = 'x';
+  btn.addEventListener('click', function() { row.remove(); updateTotal(); saveTargets(); });
+
+  row.appendChild(ti);
+  row.appendChild(pi);
+  row.appendChild(btn);
   grid.appendChild(row);
   updateTotal();
 }
 
-function removeRow(btn) {
-  btn.closest('.target-row').remove();
-  updateTotal();
-  saveTargets();
-}
-
 function updateTotal() {
-  const inputs = document.querySelectorAll('#targetsGrid input[type="number"]');
-  let sum = 0;
-  inputs.forEach(i => { sum += parseFloat(i.value) || 0; });
-  const badge = document.getElementById('totalBadge');
-  badge.innerHTML = `Total: <span>${sum.toFixed(1)}%</span>`;
-  badge.className = 'total-badge ' + (sum > 100.05 ? 'over' : sum > 99.9 ? 'ok' : '');
+  var inputs = document.querySelectorAll('#targetsGrid input[type="number"]');
+  var sum = 0;
+  inputs.forEach(function(i) { sum += parseFloat(i.value) || 0; });
+  var badge = document.getElementById('totalBadge');
+  badge.innerHTML = 'Total: <span>' + sum.toFixed(1) + '%</span>';
+  badge.className = 'total-badge' + (sum > 100.05 ? ' over' : sum > 99.9 ? ' ok' : '');
 }
 
-// ── CSV ───────────────────────────────────────────────────────────────
-function handleDragOver(e) { e.preventDefault(); document.getElementById('uploadZone').classList.add('drag-over'); }
-function handleDragLeave() { document.getElementById('uploadZone').classList.remove('drag-over'); }
+// ── CSV ────────────────────────────────────────────────────────────────
+function handleDragOver(e) {
+  e.preventDefault();
+  document.getElementById('uploadZone').classList.add('drag-over');
+}
+function handleDragLeave() {
+  document.getElementById('uploadZone').classList.remove('drag-over');
+}
 function handleDrop(e) {
   e.preventDefault();
   document.getElementById('uploadZone').classList.remove('drag-over');
-  const file = e.dataTransfer.files[0];
-  if (file) handleFile(file);
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
 }
-
 function handleFile(file) {
   if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
+  var reader = new FileReader();
+  reader.onload = function(e) {
     try {
-      const holdings = parseCSV(e.target.result);
-      const count = Object.keys(holdings).length;
+      var holdings = parseCSV(e.target.result);
+      var count = Object.keys(holdings).length;
       parsedHoldings = holdings;
       saveHoldings(holdings, file.name);
-      document.getElementById('fileStatus').innerHTML =
-        `<span style="color:var(--accent)">✓</span> Loaded <strong style="color:var(--text)">${count} holdings</strong> from ${file.name}`;
       document.getElementById('cachedBanner').style.display = 'none';
+      document.getElementById('fileStatus').innerHTML =
+        '<span style="color:var(--accent)">&#10003;</span> Loaded <strong style="color:var(--text)">' +
+        count + ' holdings</strong> from ' + file.name;
       tryRender();
     } catch(err) {
       document.getElementById('fileStatus').innerHTML =
-        `<span style="color:var(--danger)">✗ ${err.message}</span>`;
+        '<span style="color:var(--danger)">&#10007; ' + err.message + '</span>';
     }
   };
   reader.readAsText(file);
 }
 
 function parseCSV(text) {
-  const lines = text.trim().split(/\r?\n/);
+  var allLines = text.trim().split(/\r?\n/);
+  var lines = allLines.filter(function(l, i) {
+    if (i === 0) return true;
+    var s = l.replace(/"/g, '').trim();
+    return s.length > 0 && s.split(',').length > 3;
+  });
   if (lines.length < 2) throw new Error('CSV has no data rows');
-  const delim = lines[0].includes('\t') ? '\t' : ',';
-  const headers = lines[0].split(delim).map(h => h.replace(/"/g,'').trim().toLowerCase());
 
-  const tickerCols = ['symbol','ticker','security','name','stock'];
-  const tickerIdx = headers.findIndex(h => tickerCols.some(t => h.includes(t)));
+  var delim = lines[0].indexOf('\t') !== -1 ? '\t' : ',';
+  var headers = splitLine(lines[0], delim).map(function(h) {
+    return h.replace(/"/g, '').trim().toLowerCase();
+  });
+
+  var tickerIdx = -1;
+  var tickerCols = ['symbol','ticker','security'];
+  for (var i = 0; i < headers.length; i++) {
+    if (tickerCols.indexOf(headers[i]) !== -1) { tickerIdx = i; break; }
+  }
+  if (tickerIdx === -1) {
+    for (var i = 0; i < headers.length; i++) {
+      for (var j = 0; j < tickerCols.length; j++) {
+        if (headers[i].indexOf(tickerCols[j]) !== -1) { tickerIdx = i; break; }
+      }
+      if (tickerIdx !== -1) break;
+    }
+  }
   if (tickerIdx === -1) throw new Error('Cannot find ticker/symbol column');
 
-  const valueCols = ['market value','current value','value','amount','total value','market_value'];
-  let valueIdx = headers.findIndex(h => valueCols.some(v => h.includes(v)));
-
-  const holdings = {};
+  var valueIdx = headers.indexOf('book value (cad)');
+  if (valueIdx === -1) {
+    var valueCols = ['market value','current value','value','amount'];
+    for (var i = 0; i < headers.length; i++) {
+      for (var j = 0; j < valueCols.length; j++) {
+        if (headers[i].indexOf(valueCols[j]) !== -1) { valueIdx = i; break; }
+      }
+      if (valueIdx !== -1) break;
+    }
+  }
 
   if (valueIdx === -1) {
-    const qtyIdx = headers.findIndex(h => h.includes('quant') || h.includes('shares'));
-    const priceIdx = headers.findIndex(h => h.includes('price') || h.includes('last'));
+    var qtyIdx = -1, priceIdx = -1;
+    for (var i = 0; i < headers.length; i++) {
+      if (headers[i].indexOf('quant') !== -1 || headers[i].indexOf('shares') !== -1) qtyIdx = i;
+      if (headers[i].indexOf('price') !== -1 || headers[i].indexOf('last') !== -1) priceIdx = i;
+    }
     if (qtyIdx !== -1 && priceIdx !== -1) {
-      for (let i = 1; i < lines.length; i++) {
-        const cols = splitLine(lines[i], delim);
-        const ticker = cols[tickerIdx]?.replace(/"/g,'').trim().toUpperCase();
-        const qty = parseFloat(cols[qtyIdx]?.replace(/[",\$]/g,'')) || 0;
-        const price = parseFloat(cols[priceIdx]?.replace(/[",\$]/g,'')) || 0;
-        if (ticker && qty && price) holdings[ticker] = (holdings[ticker]||0) + qty*price;
+      var holdings = {};
+      for (var i = 1; i < lines.length; i++) {
+        var cols = splitLine(lines[i], delim);
+        var ticker = (cols[tickerIdx] || '').replace(/"/g,'').trim().toUpperCase();
+        var qty = parseFloat((cols[qtyIdx] || '').replace(/[",\$]/g,'')) || 0;
+        var price = parseFloat((cols[priceIdx] || '').replace(/[",\$]/g,'')) || 0;
+        if (ticker && qty && price) holdings[ticker] = (holdings[ticker] || 0) + qty * price;
       }
       return holdings;
     }
-    throw new Error('Cannot find a market value column');
+    throw new Error('Cannot find value column');
   }
 
-  for (let i = 1; i < lines.length; i++) {
-    const cols = splitLine(lines[i], delim);
-    const ticker = cols[tickerIdx]?.replace(/"/g,'').trim().toUpperCase();
-    const val = parseFloat(cols[valueIdx]?.replace(/[",\$\s]/g,''));
-    if (ticker && !isNaN(val) && val > 0) holdings[ticker] = (holdings[ticker]||0) + val;
+  var holdings = {};
+  for (var i = 1; i < lines.length; i++) {
+    var cols = splitLine(lines[i], delim);
+    if (cols.length < 3) continue;
+    var ticker = (cols[tickerIdx] || '').replace(/"/g,'').trim().toUpperCase();
+    var val = parseFloat((cols[valueIdx] || '').replace(/[",\$\s]/g,''));
+    if (ticker && !isNaN(val) && val > 0) {
+      holdings[ticker] = (holdings[ticker] || 0) + val;
+    }
   }
   if (Object.keys(holdings).length === 0) throw new Error('No valid rows found');
   return holdings;
 }
 
 function splitLine(line, delim) {
-  const result = []; let cur = '', inQ = false;
-  for (const ch of line) {
-    if (ch === '"') inQ = !inQ;
+  var result = [], cur = '', inQ = false;
+  for (var i = 0; i < line.length; i++) {
+    var ch = line[i];
+    if (ch === '"') { inQ = !inQ; }
     else if (ch === delim && !inQ) { result.push(cur); cur = ''; }
-    else cur += ch;
+    else { cur += ch; }
   }
   result.push(cur);
   return result;
 }
 
-// ── Analyze ───────────────────────────────────────────────────────────
+// ── Analyze ────────────────────────────────────────────────────────────
 function analyze() {
-  const rows = document.querySelectorAll('#targetsGrid .target-row');
+  var rows = document.querySelectorAll('#targetsGrid .target-row');
   targets = [];
-  rows.forEach(row => {
-    const [ti, pi] = row.querySelectorAll('input');
-    const ticker = ti.value.trim().toUpperCase();
-    const pct = parseFloat(pi.value);
-    if (ticker && !isNaN(pct) && pct > 0) targets.push({ ticker, pct });
+  rows.forEach(function(row) {
+    var inputs = row.querySelectorAll('input');
+    var ticker = inputs[0].value.trim().toUpperCase();
+    var pct = parseFloat(inputs[1].value);
+    if (ticker && !isNaN(pct) && pct > 0) targets.push({ ticker: ticker, pct: pct });
   });
   if (!targets.length) { alert('Add at least one target.'); return; }
   saveTargets();
@@ -248,119 +293,306 @@ function analyze() {
 }
 
 function tryRender() {
-  if (!parsedHoldings || !targets.length) return;
-  renderResults();
+  if (parsedHoldings && targets.length > 0) renderResults();
 }
 
-// ── Render ────────────────────────────────────────────────────────────
+// ── Render results ─────────────────────────────────────────────────────
 function renderResults() {
-  const h = parsedHoldings;
-  const total = Object.values(h).reduce((a,b) => a+b, 0);
+  var h = parsedHoldings;
+  var total = 0;
+  var keys = Object.keys(h);
+  for (var i = 0; i < keys.length; i++) { total += h[keys[i]]; }
 
   document.getElementById('statTotal').textContent = fmtCurrency(total);
-  document.getElementById('statPositions').textContent = Object.keys(h).length;
+  document.getElementById('statPositions').textContent = keys.length;
 
-  const maxDrift = targets.reduce((mx,t) => {
-    const actual = ((h[t.ticker]||0)/total)*100;
-    return Math.max(mx, Math.abs(actual - t.pct));
-  }, 0);
-  document.getElementById('statDrift').textContent = maxDrift.toFixed(1)+'%';
+  var maxDrift = 0;
+  for (var i = 0; i < targets.length; i++) {
+    var d = Math.abs(((h[targets[i].ticker] || 0) / total) * 100 - targets[i].pct);
+    if (d > maxDrift) maxDrift = d;
+  }
+  document.getElementById('statDrift').textContent = maxDrift.toFixed(1) + '%';
 
-  const tbody = document.getElementById('allocBody');
-  tbody.innerHTML = '';
-  const targetTickers = new Set(targets.map(t => t.ticker));
-  const maxActual = Math.max(...targets.map(t => ((h[t.ticker]||0)/total)*100), 0.01);
-  const maxTarget = Math.max(...targets.map(t => t.pct));
+  var targetTickers = {};
+  for (var i = 0; i < targets.length; i++) { targetTickers[targets[i].ticker] = true; }
 
-  targets.forEach((t, i) => {
-    const val = h[t.ticker] || 0;
-    const actual = (val/total)*100;
-    const drift = actual - t.pct;
-    const color = COLORS[i % COLORS.length];
-    const barA = Math.min((actual/maxActual)*85, 100);
-    const barT = Math.min((t.pct/maxTarget)*85, 100);
-    const abs = Math.abs(drift);
-    const action = abs < 0.5 ? 'Hold' : drift < 0 ? 'Buy' : 'Sell';
-    const badgeCls = abs < 0.5 ? 'badge-hold' : drift < 0 ? 'badge-buy' : 'badge-sell';
-    const driftCls = abs < 0.5 ? 'drift-neutral' : drift > 0 ? 'drift-pos' : 'drift-neg';
-    const sign = drift > 0 ? '+' : '';
+  var maxPct = 0.01;
+  for (var i = 0; i < targets.length; i++) {
+    var a = ((h[targets[i].ticker] || 0) / total) * 100;
+    if (a > maxPct) maxPct = a;
+    if (targets[i].pct > maxPct) maxPct = targets[i].pct;
+  }
 
-    tbody.innerHTML += `
-      <tr>
-        <td><div class="ticker">${t.ticker}</div></td>
-        <td>${fmtCurrency(val)}</td>
-        <td>${actual.toFixed(1)}%</td>
-        <td>${t.pct.toFixed(1)}%</td>
-        <td class="drift-cell">
-          <div class="bar-wrap">
-            <div class="bar-track">
-              <div class="bar-target" style="left:${barT}%"></div>
-              <div class="bar-actual" style="width:${barA}%;background:${color}"></div>
-            </div>
-            <div class="drift-label ${driftCls}">${sign}${drift.toFixed(1)}%</div>
-          </div>
-        </td>
-        <td><span class="action-badge ${badgeCls}">${action}</span></td>
-      </tr>`;
-  });
+  // Build position cards
+  var container = document.getElementById('allocBody');
+  container.innerHTML = '';
 
-  const unmatched = Object.keys(h).filter(k => !targetTickers.has(k));
-  const us = document.getElementById('unmatchedSection');
+  for (var i = 0; i < targets.length; i++) {
+    var t = targets[i];
+    var val = h[t.ticker] || 0;
+    var actual = (val / total) * 100;
+    var targetVal = (t.pct / 100) * total;
+    var drift = actual - t.pct;
+    var color = COLORS[i % COLORS.length];
+    var absD = Math.abs(drift);
+    var action = absD < 0.5 ? 'Hold' : drift < 0 ? 'Buy' : 'Sell';
+    var badgeCls = absD < 0.5 ? 'badge-hold' : drift < 0 ? 'badge-buy' : 'badge-sell';
+    var driftCls = absD < 0.5 ? 'drift-neutral' : drift > 0 ? 'drift-pos' : 'drift-neg';
+    var sign = drift > 0 ? '+' : '';
+    var wActual = (actual / maxPct) * 100;
+    var wTarget = (t.pct / maxPct) * 100;
+
+    var card = document.createElement('div');
+    card.className = 'pos-card';
+    card.style.borderLeftColor = color;
+
+    // Row 1: ticker+value | drift | badge
+    var row1 = document.createElement('div');
+    row1.className = 'pos-row1';
+
+    var leftEl = document.createElement('div');
+
+    var tickerEl = document.createElement('div');
+    tickerEl.className = 'pos-ticker';
+    tickerEl.textContent = t.ticker;
+
+    var valueEl = document.createElement('div');
+    valueEl.className = 'pos-value-amt';
+    valueEl.textContent = fmtCurrency(val) + ' · target ' + fmtCurrency(targetVal);
+
+    leftEl.appendChild(tickerEl);
+    leftEl.appendChild(valueEl);
+
+    var driftEl = document.createElement('div');
+    driftEl.className = 'pos-drift ' + driftCls;
+    driftEl.textContent = sign + drift.toFixed(1) + '%';
+
+    var badgeEl = document.createElement('span');
+    badgeEl.className = 'action-badge ' + badgeCls;
+    badgeEl.textContent = action;
+
+    row1.appendChild(leftEl);
+    row1.appendChild(driftEl);
+    row1.appendChild(badgeEl);
+
+    // Actual bar row
+    var row2 = document.createElement('div');
+    row2.className = 'pos-bar-row';
+
+    var lbl2 = document.createElement('div');
+    lbl2.className = 'pos-bar-label';
+    lbl2.textContent = 'Actual';
+
+    var track2 = document.createElement('div');
+    track2.className = 'pos-bar-track';
+    var fill2 = document.createElement('div');
+    fill2.className = 'pos-bar-fill';
+    fill2.style.width = wActual + '%';
+    fill2.style.background = color;
+    fill2.style.opacity = '0.85';
+    track2.appendChild(fill2);
+
+    var pct2 = document.createElement('div');
+    pct2.className = 'pos-bar-pct';
+    pct2.textContent = actual.toFixed(1) + '%';
+
+    row2.appendChild(lbl2);
+    row2.appendChild(track2);
+    row2.appendChild(pct2);
+
+    // Target bar row
+    var row3 = document.createElement('div');
+    row3.className = 'pos-bar-row';
+
+    var lbl3 = document.createElement('div');
+    lbl3.className = 'pos-bar-label';
+    lbl3.textContent = 'Target';
+
+    var track3 = document.createElement('div');
+    track3.className = 'pos-bar-track';
+    var fill3 = document.createElement('div');
+    fill3.className = 'pos-bar-fill';
+    fill3.style.width = wTarget + '%';
+    fill3.style.background = color;
+    fill3.style.opacity = '0.25';
+    track3.appendChild(fill3);
+
+    var pct3 = document.createElement('div');
+    pct3.className = 'pos-bar-pct';
+    pct3.style.opacity = '0.5';
+    pct3.textContent = t.pct.toFixed(1) + '%';
+
+    row3.appendChild(lbl3);
+    row3.appendChild(track3);
+    row3.appendChild(pct3);
+
+    card.appendChild(row1);
+    card.appendChild(row2);
+    card.appendChild(row3);
+    container.appendChild(card);
+  }
+
+  // Unmatched
+  var unmatched = [];
+  for (var k in h) {
+    if (!targetTickers[k]) unmatched.push(k);
+  }
+  var us = document.getElementById('unmatchedSection');
   if (unmatched.length > 0) {
     us.style.display = 'block';
-    document.getElementById('unmatchedTags').innerHTML =
-      unmatched.map(k => `<span class="tag">${k} ${((h[k]/total)*100).toFixed(1)}%</span>`).join('');
-  } else { us.style.display = 'none'; }
+    var tags = '';
+    for (var i = 0; i < unmatched.length; i++) {
+      tags += '<span class="tag">' + unmatched[i] + ' ' + ((h[unmatched[i]] / total) * 100).toFixed(1) + '%</span>';
+    }
+    document.getElementById('unmatchedTags').innerHTML = tags;
+  } else {
+    us.style.display = 'none';
+  }
 
-  renderDonut('donutActual','legendActual',
-    targets.map((t,i) => ({ label:t.ticker, value:((h[t.ticker]||0)/total)*100, color:COLORS[i%COLORS.length] }))
-      .concat(Object.keys(h).filter(k=>!targetTickers.has(k)).map(k=>({ label:k, value:(h[k]/total)*100, color:'#3a3d45' })))
-  );
-  renderDonut('donutTarget','legendTarget',
-    targets.map((t,i) => ({ label:t.ticker, value:t.pct, color:COLORS[i%COLORS.length] }))
-  );
+  // Build chart data
+  var chartData = [];
+  for (var i = 0; i < targets.length; i++) {
+    var t = targets[i];
+    chartData.push({
+      ticker: t.ticker,
+      actual: ((h[t.ticker] || 0) / total) * 100,
+      target: t.pct,
+      value:  h[t.ticker] || 0,
+      color:  COLORS[i % COLORS.length]
+    });
+  }
+  renderChart(chartData, total);
 
   document.getElementById('results').style.display = 'block';
-  setTimeout(() => document.getElementById('results').scrollIntoView({ behavior:'smooth', block:'start' }), 100);
+  setTimeout(function() {
+    document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 100);
 }
 
-function renderDonut(svgId, legendId, slices) {
-  const svg = document.getElementById(svgId);
-  const legend = document.getElementById(legendId);
-  const cx=80, cy=80, r=58, stroke=24, circ=2*Math.PI*r;
-  svg.innerHTML = ''; legend.innerHTML = '';
-  const total = slices.reduce((s,x) => s+x.value, 0);
-  if (!total) return;
-  let offset = 0;
-  slices.forEach(s => {
-    const frac = s.value/total;
-    const dashLen = frac*circ;
-    const circle = document.createElementNS('http://www.w3.org/2000/svg','circle');
-    circle.setAttribute('cx', cx); circle.setAttribute('cy', cy); circle.setAttribute('r', r);
-    circle.setAttribute('fill','none'); circle.setAttribute('stroke', s.color);
-    circle.setAttribute('stroke-width', stroke);
-    circle.setAttribute('stroke-dasharray', `${dashLen} ${circ-dashLen}`);
-    circle.setAttribute('stroke-dashoffset', circ/4 - offset*circ);
-    svg.appendChild(circle);
-    offset += frac;
-    legend.innerHTML += `
-      <div class="legend-item">
-        <div class="legend-dot" style="background:${s.color}"></div>
-        <div class="legend-name">${s.label}</div>
-        <div class="legend-val">${s.value.toFixed(1)}%</div>
-      </div>`;
-  });
+// ── Bullet chart ───────────────────────────────────────────────────────
+function renderChart(data, total) {
+  var container = document.getElementById('chartContainer');
+  if (!data.length) return;
+
+  var W       = container.clientWidth || 300;
+  var PAD_L   = 50;
+  var PAD_R   = 48;
+  var PAD_T   = 10;
+  var PAD_B   = 10;
+  var ROW_H   = 48;
+  var GAP     = 12;
+  var BAR_H   = 10;
+  var TRACK_H = 24;
+
+  var maxVal = 0;
+  for (var i = 0; i < data.length; i++) {
+    if (data[i].actual > maxVal) maxVal = data[i].actual;
+    if (data[i].target > maxVal) maxVal = data[i].target;
+  }
+  maxVal = Math.ceil(maxVal / 5) * 5 + 8;
+
+  var barArea = W - PAD_L - PAD_R;
+  var totalH  = PAD_T + data.length * (ROW_H + GAP) - GAP + PAD_B;
+
+  var s = '';
+  s += '<svg width="100%" height="' + totalH + '" viewBox="0 0 ' + W + ' ' + totalH + '"';
+  s += ' style="overflow:visible;display:block;font-family:DM Mono,monospace">';
+
+  for (var i = 0; i < data.length; i++) {
+    var d       = data[i];
+    var cy      = PAD_T + i * (ROW_H + GAP) + ROW_H / 2;
+    var wA      = (d.actual / maxVal) * barArea;
+    var wT      = (d.target / maxVal) * barArea;
+    var drift   = d.actual - d.target;
+    var dc      = Math.abs(drift) < 0.5 ? '#6b7080' : drift > 0 ? '#c8f060' : '#f06060';
+    var delay   = i * 0.08;
+    var sign    = drift > 0 ? '+' : '';
+    var tDol    = fmtCurrencyShort((d.target / 100) * total);
+    var aDol    = fmtCurrencyShort(d.value);
+
+    // Ticker
+    s += '<text x="' + (PAD_L - 7) + '" y="' + (cy - 8) + '"';
+    s += ' text-anchor="end" dominant-baseline="middle"';
+    s += ' fill="#e8eaf0" font-size="12" font-weight="500">' + d.ticker + '</text>';
+
+    // Dollar amounts
+    s += '<text x="' + (PAD_L - 7) + '" y="' + (cy + 8) + '"';
+    s += ' text-anchor="end" dominant-baseline="middle"';
+    s += ' fill="#6b7080" font-size="9">' + aDol + ' &rarr; ' + tDol + '</text>';
+
+    // Background track
+    s += '<rect x="' + PAD_L + '" y="' + (cy - TRACK_H / 2) + '"';
+    s += ' width="' + barArea + '" height="' + TRACK_H + '" rx="5" fill="#1c1f26"/>';
+
+    // Target zone shading
+    var zoneHalf = (5 / maxVal) * barArea;
+    var zoneX    = Math.max(PAD_L, PAD_L + wT - zoneHalf);
+    var zoneW    = Math.min(zoneHalf * 2, barArea);
+    s += '<rect x="' + zoneX + '" y="' + (cy - TRACK_H / 2) + '"';
+    s += ' width="' + zoneW + '" height="' + TRACK_H + '" rx="3"';
+    s += ' fill="' + d.color + '" opacity="0.12"/>';
+
+    // Actual bar (animated)
+    s += '<rect x="' + PAD_L + '" y="' + (cy - BAR_H / 2) + '"';
+    s += ' width="' + wA + '" height="' + BAR_H + '" rx="3"';
+    s += ' fill="' + d.color + '" opacity="0.9">';
+    s += '<animate attributeName="width" from="0" to="' + wA + '"';
+    s += ' dur="0.5s" begin="' + delay + 's" fill="freeze"';
+    s += ' calcMode="spline" keySplines="0.4 0 0.2 1"/>';
+    s += '</rect>';
+
+    // Target tick
+    s += '<line x1="' + (PAD_L + wT) + '" y1="' + (cy - TRACK_H / 2 - 3) + '"';
+    s += ' x2="' + (PAD_L + wT) + '" y2="' + (cy + TRACK_H / 2 + 3) + '"';
+    s += ' stroke="' + d.color + '" stroke-width="2.5" opacity="0.7"/>';
+
+    // Actual % label
+    if (wA > 36) {
+      s += '<text x="' + (PAD_L + wA - 5) + '" y="' + cy + '"';
+      s += ' text-anchor="end" dominant-baseline="middle"';
+      s += ' fill="rgba(0,0,0,0.65)" font-size="9">' + d.actual.toFixed(1) + '%</text>';
+    } else {
+      s += '<text x="' + (PAD_L + wA + 5) + '" y="' + cy + '"';
+      s += ' dominant-baseline="middle"';
+      s += ' fill="' + d.color + '" font-size="9">' + d.actual.toFixed(1) + '%</text>';
+    }
+
+    // Target % above tick
+    s += '<text x="' + (PAD_L + wT) + '" y="' + (cy - TRACK_H / 2 - 6) + '"';
+    s += ' text-anchor="middle"';
+    s += ' fill="' + d.color + '" font-size="9" opacity="0.6">' + d.target.toFixed(1) + '%</text>';
+
+    // Drift
+    s += '<text x="' + (W - 4) + '" y="' + cy + '"';
+    s += ' text-anchor="end" dominant-baseline="middle"';
+    s += ' fill="' + dc + '" font-size="11" font-weight="500">' + sign + drift.toFixed(1) + '%</text>';
+  }
+
+  s += '</svg>';
+
+  // Legend
+  s += '<div style="display:flex;gap:20px;margin-top:12px;justify-content:center">';
+  s += '<div style="display:flex;align-items:center;gap:7px;font-size:11px;color:#6b7080;font-family:\'DM Mono\',monospace">';
+  s += '<div style="width:14px;height:8px;border-radius:2px;background:#c8f060;opacity:0.9"></div>Actual</div>';
+  s += '<div style="display:flex;align-items:center;gap:7px;font-size:11px;color:#6b7080;font-family:\'DM Mono\',monospace">';
+  s += '<div style="width:3px;height:16px;border-radius:1px;background:#c8f060;opacity:0.7"></div>Target</div>';
+  s += '</div>';
+
+  container.innerHTML = s;
 }
 
+// ── Tabs ───────────────────────────────────────────────────────────────
 function switchTab(name, btn) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+  document.querySelectorAll('.tab-content').forEach(function(t) { t.classList.remove('active'); });
   btn.classList.add('active');
-  document.getElementById('tab-'+name).classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
 }
 
+// ── Helpers ────────────────────────────────────────────────────────────
 function fmtCurrency(n) {
-  if (n >= 1e6) return '$'+(n/1e6).toFixed(2)+'M';
-  if (n >= 1000) return '$'+(n/1000).toFixed(1)+'K';
-  return '$'+n.toFixed(2);
+  return '$' + n.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtCurrencyShort(n) {
+  return '$' + n.toLocaleString('en-CA', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
